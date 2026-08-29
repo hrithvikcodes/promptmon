@@ -1,0 +1,10 @@
+# Ignore local VS Code configurations
+
+backend/.env
+frontend/.env
+.env
+.vscode/
+node_modules/
+.venv/
+__pycache__/
+.uv/
