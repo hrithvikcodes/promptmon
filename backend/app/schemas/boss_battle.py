@@ -18,7 +18,7 @@ class CurrentBossBattleResponse(BaseModel):
     legendary_promptmon_name: str
     your_promptmon: PromptmonResponse
     your_turns_used: int
-    max_turns: int = 1
+    max_turns: int = 3
     # boss_strategy_notes is intentionally excluded — that's the AI's internal
     # game plan against this specific player, never shown to them.
 

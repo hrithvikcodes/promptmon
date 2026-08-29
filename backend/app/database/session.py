@@ -6,7 +6,7 @@ from app.core.config import settings
 
 engine = create_async_engine(
     settings.DATABASE_URL,
-    echo=settings.ENVIRONMENT == "production",
+    echo=settings.ENVIRONMENT == "development",
     future=True,
     pool_pre_ping=True,   # checks connection is alive before using it — Supabase's
                           # pooler can silently drop idle connections; without this

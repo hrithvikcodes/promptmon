@@ -1,131 +1,76 @@
-import { useState } from "react";
-import LandingPage from "./LandingPage.jsx";
-import AdminLogin from "./AdminLogin.jsx";
-import AdminPanel from "./AdminPanel.jsx";
-import UserRegister from "./UserRegister.jsx";
-import PromptmonForm from "./PromptmonForm.jsx";
-import WaitingRoom from "./WaitingRoom.jsx";
-import PostRoundWait from "./PostRoundWait.jsx";
-import BattleView from "./BattleView.jsx";
-import BossBattleView from "./BossBattleView.jsx";
-import ByeScreen from "./ByeScreen.jsx";
-import EliminatedScreen from "./EliminatedScreen.jsx";
-import TournamentEndedScreen from "./TournamentEndedScreen.jsx";
-import ResultsView from "./ResultsView.jsx";
-import LeaderboardView from "./LeaderboardView.jsx";
+import { useCallback, useState } from "react";
+import { Loader2 } from "lucide-react";
+import { api, ApiError, isTournamentFinished } from "./api.js";
+import { usePolling } from "./usePolling.js";
+import { C } from "./theme.js";
+import { Panel, ScreenTitle } from "./ui.jsx";
 
-function loadSession() {
-  const raw = localStorage.getItem("session");
-  return raw ? JSON.parse(raw) : null;
-}
+export default function PostRoundWait({
+  sessionId,
+  lastMatchId,
+  waitingForBoss,
+  onNextMatch,
+  onResolveFinished,
+  onBossReady,
+  onTournamentEnded,
+}) {
+  const [note, setNote] = useState(
+    waitingForBoss
+      ? "You're a finalist! Waiting for the admin to start the final battle..."
+      : "Waiting for the next round to begin..."
+  );
 
-export default function App() {
-  const [stage, setStage] = useState("landing");
-  const [session, setSession] = useState(loadSession());
-  const [adminPassword, setAdminPassword] = useState("");
-  const [result, setResult] = useState(null);
-  const [isBossResult, setIsBossResult] = useState(false);
-  const [lastMatchId, setLastMatchId] = useState(null);
-  const [waitingForBoss, setWaitingForBoss] = useState(false);
-
-  const go = (next) => setStage(next);
-  const onTournamentEnded = () => go("tournamentEnded");
-
-  function handleRegistered(newSession) {
-    localStorage.setItem("session", JSON.stringify(newSession));
-    setSession(newSession);
-    go("promptmon");
-  }
-
-  function handleBattleFinished(finishResult, matchId, round, won) {
-    setResult(finishResult);
-    setIsBossResult(false);
-    setLastMatchId(matchId);
-
-    if (!won) {
-      go("resultsEliminated");
+  const poll = useCallback(async () => {
+    if (waitingForBoss) {
+      try {
+        await api.getCurrentBossBattle(sessionId);
+        onBossReady();
+      } catch (err) {
+        if (isTournamentFinished(err)) {
+          onTournamentEnded?.();
+          return;
+        }
+        if (!(err instanceof ApiError && err.status === 404)) {
+          setNote("Trouble reaching the server — retrying...");
+        }
+      }
       return;
     }
-    setWaitingForBoss(round === "round3");
-    go("results");
-  }
 
-  function handleBossFinished(finishResult) {
-    setResult(finishResult);
-    setIsBossResult(true);
-    go("results");
-  }
+    try {
+      const match = await api.getCurrentMatch(sessionId);
 
-  switch (stage) {
-    case "landing":
-      return <LandingPage go={go} />;
-    case "adminLogin":
-      return <AdminLogin onSuccess={(pw) => { setAdminPassword(pw); go("adminPanel"); }} onBack={() => go("landing")} />;
-    case "adminPanel":
-      return <AdminPanel password={adminPassword} onBack={() => go("landing")} />;
-    case "userRegister":
-      return <UserRegister onRegistered={handleRegistered} onBack={() => go("landing")} />;
-    case "promptmon":
-      return <PromptmonForm sessionId={session.id} onCreated={() => go("waitingStart")} />;
-    case "waitingStart":
-      return <WaitingRoom onStarted={() => go("battle")} />;
-    case "battle":
-      return (
-        <BattleView
-          sessionId={session.id}
-          onFinished={handleBattleFinished}
-          onBye={() => go("bye")}
-          onTournamentEnded={onTournamentEnded}
-        />
-      );
-    case "bye":
-      return <ByeScreen onContinue={() => go("waitingNext")} />;
-    case "bossBattle":
-      return (
-        <BossBattleView
-          sessionId={session.id}
-          onFinished={handleBossFinished}
-          onNotQualified={() => go("leaderboard")}
-          onTournamentEnded={onTournamentEnded}
-        />
-      );
-    case "results":
-      return (
-        <ResultsView
-          sessionId={session.id}
-          result={result}
-          isBoss={isBossResult}
-          onContinue={() => go(isBossResult ? "leaderboard" : "waitingNext")}
-        />
-      );
-    case "resultsEliminated":
-      return (
-        <ResultsView
-          sessionId={session.id}
-          result={result}
-          isBoss={false}
-          onContinue={() => go("eliminated")}
-        />
-      );
-    case "eliminated":
-      return <EliminatedScreen onContinue={() => go("leaderboard")} />;
-    case "waitingNext":
-      return (
-        <PostRoundWait
-          sessionId={session.id}
-          lastMatchId={lastMatchId}
-          waitingForBoss={waitingForBoss}
-          onNextMatch={() => go("battle")}
-          onEliminated={() => go("eliminated")}
-          onBossReady={() => go("bossBattle")}
-          onTournamentEnded={onTournamentEnded}
-        />
-      );
-    case "leaderboard":
-      return <LeaderboardView onBack={() => go("landing")} />;
-    case "tournamentEnded":
-      return <TournamentEndedScreen onBack={() => go("landing")} />;
-    default:
-      return <LandingPage go={go} />;
-  }
+      if (match.status === "finished") {
+        // Resolve and show the result regardless of whether this is the same
+        // match_id we already knew about — an unseen finished match must
+        // never be treated as "nothing changed."
+        await onResolveFinished(sessionId, match);
+        return;
+      }
+
+      if (match.match_id === lastMatchId) return; // still the same in-progress match, nothing new
+
+      onNextMatch(match);
+    } catch (err) {
+      if (isTournamentFinished(err)) {
+        onTournamentEnded?.();
+        return;
+      }
+      /* no match yet, keep waiting */
+    }
+  }, [sessionId, lastMatchId, waitingForBoss, onNextMatch, onResolveFinished, onBossReady, onTournamentEnded]);
+
+  usePolling(poll, 6000);
+
+  return (
+    <div className="min-h-screen flex items-center justify-center px-6" style={{ background: C.bg }}>
+      <div className="w-full max-w-sm text-center">
+        <ScreenTitle eyebrow="Standby" title="Between Rounds" />
+        <Panel glow={C.gold} className="flex flex-col items-center gap-3">
+          <Loader2 size={24} className="animate-spin" style={{ color: C.gold }} />
+          <p style={{ color: C.textMuted }}>{note}</p>
+        </Panel>
+      </div>
+    </div>
+  );
 }

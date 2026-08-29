@@ -1,13 +1,11 @@
 import json
 from typing import Optional, Sequence
 
-from google.genai import types
-
 from app.models.conversation import Conversation
 from app.models.promptmon import Promptmon
-from app.services.gemini_client import gemini_retry, get_gemini_client
+from app.services.groq_client import get_groq_client, groq_retry
 
-TEXT_MODEL = "gemini-3.6-flash"
+TEXT_MODEL = "openai/gpt-oss-120b"
 
 SYSTEM_PROMPT = (
     "You are the official Battle Judge for the Promptmon: AI Battle Arena tournament. "
@@ -65,7 +63,7 @@ def _build_prompt(
     )
 
 
-@gemini_retry
+@groq_retry
 async def judge_battle(
     promptmon_a: Promptmon,
     promptmon_b: Promptmon,
@@ -74,18 +72,21 @@ async def judge_battle(
     history_a: Sequence[Conversation],
     history_b: Sequence[Conversation],
 ) -> dict:
-    client = get_gemini_client()
+    client = get_groq_client()
 
-    response = await client.aio.models.generate_content(
+    response = await client.chat.completions.create(
         model=TEXT_MODEL,
-        contents=_build_prompt(promptmon_a, promptmon_b, scenario, twist, history_a, history_b),
-        config=types.GenerateContentConfig(
-            system_instruction=SYSTEM_PROMPT,
-            response_mime_type="application/json",
-        ),
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": _build_prompt(promptmon_a, promptmon_b, scenario, twist, history_a, history_b),
+            },
+        ],
+        response_format={"type": "json_object"},
     )
 
-    data = json.loads(response.text)
+    data = json.loads(response.choices[0].message.content)
 
     for side in ("team_a", "team_b"):
         s = data[side]

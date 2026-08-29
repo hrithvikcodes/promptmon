@@ -17,7 +17,7 @@ from app.schemas.match import BattlePromptCreate, CurrentMatchResponse, FinishBa
 from app.services import battle_judge_service, battle_strategy_service
 from app.services.battle_scenario import pick_scenario, pick_twist
 
-MAX_TURNS = 1
+MAX_TURNS = 3
 
 async def get_match_status(db: AsyncSession, session: Session, match_id: uuid.UUID) -> dict:
     require_tournament_active(session.tournament)

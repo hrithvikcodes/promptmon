@@ -2,7 +2,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -10,19 +9,14 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    DATABASE_URL: str
 
-    DATABASE_URL: str 
+    GROQ_API_KEY: str
 
-
-    
-    GEMINI_API_KEY: str 
-
-    
     ADMIN_PASSWORD: str
 
-    
     APP_NAME: str = "Promptmon Battle Arena"
     ENVIRONMENT: str = "development"
 
 
-settings = Settings() #type: ignore
+settings = Settings()  # type: ignore

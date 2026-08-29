@@ -1,12 +1,10 @@
 from typing import Sequence
 
-from google.genai import types
-
 from app.models.boss_battle_conversation import BossBattleConversation
 from app.models.promptmon import Promptmon
-from app.services.gemini_client import gemini_retry, get_gemini_client
+from app.services.groq_client import get_groq_client, groq_retry
 
-TEXT_MODEL = "gemini-3.6-flash"
+TEXT_MODEL = "openai/gpt-oss-120b"
 
 SYSTEM_PROMPT = (
     "You are narrating the Final Boss Battle for the Promptmon: AI Battle Arena tournament. "
@@ -43,7 +41,7 @@ def _build_prompt(
     )
 
 
-@gemini_retry
+@groq_retry
 async def generate_boss_turn_response(
     promptmon: Promptmon,
     legendary_promptmon_name: str,
@@ -51,12 +49,17 @@ async def generate_boss_turn_response(
     history: Sequence[BossBattleConversation],
     prompt_text: str,
 ) -> str:
-    client = get_gemini_client()
+    client = get_groq_client()
 
-    response = await client.aio.models.generate_content(
+    response = await client.chat.completions.create(
         model=TEXT_MODEL,
-        contents=_build_prompt(promptmon, legendary_promptmon_name, boss_strategy_notes, history, prompt_text),
-        config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": _build_prompt(promptmon, legendary_promptmon_name, boss_strategy_notes, history, prompt_text),
+            },
+        ],
     )
 
-    return response.text
+    return response.choices[0].message.content

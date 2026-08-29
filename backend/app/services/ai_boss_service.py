@@ -1,14 +1,12 @@
 import json
 from typing import Sequence
 
-from google.genai import types
-
 from app.models.conversation import Conversation
 from app.models.promptmon import Promptmon
 from app.models.score import Score
-from app.services.gemini_client import gemini_retry, get_gemini_client
+from app.services.groq_client import get_groq_client, groq_retry
 
-TEXT_MODEL = "gemini-3.6-flash"
+TEXT_MODEL = "openai/gpt-oss-120b"
 
 SYSTEM_PROMPT = (
     "You are the Final Boss Architect for the Promptmon: AI Battle Arena tournament. "
@@ -44,20 +42,20 @@ def _build_prompt(promptmon: Promptmon, conversations: Sequence[Conversation], s
     )
 
 
-@gemini_retry
+@groq_retry
 async def generate_boss_profile(
     promptmon: Promptmon, conversations: Sequence[Conversation], scores: Sequence[Score]
 ) -> tuple[str, str]:
-    client = get_gemini_client()
+    client = get_groq_client()
 
-    response = await client.aio.models.generate_content(
+    response = await client.chat.completions.create(
         model=TEXT_MODEL,
-        contents=_build_prompt(promptmon, conversations, scores),
-        config=types.GenerateContentConfig(
-            system_instruction=SYSTEM_PROMPT,
-            response_mime_type="application/json",
-        ),
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": _build_prompt(promptmon, conversations, scores)},
+        ],
+        response_format={"type": "json_object"},
     )
 
-    data = json.loads(response.text)
+    data = json.loads(response.choices[0].message.content)
     return str(data["legendary_promptmon_name"]), str(data["boss_strategy_notes"])

@@ -38,7 +38,7 @@ class CurrentMatchResponse(BaseModel):
     your_promptmon: PromptmonResponse
     opponent_promptmon: PromptmonResponse
     your_turns_used: int
-    max_turns: int = 1
+    max_turns: int = 3
     winner_session_id: Optional[uuid.UUID] = None
 
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Shield, PlayCircle, Trophy, Flame, Square, Users, RotateCcw } from "lucide-react";
+import { Shield, PlayCircle, Trophy, Flame, Square, Users, RotateCcw, ListOrdered } from "lucide-react";
 import { api, ApiError } from "./api.js";
 import { usePolling } from "./usePolling.js";
 import { C } from "./theme.js";
@@ -21,6 +21,7 @@ export default function AdminPanel({ password, onBack }) {
   const [status, setStatus] = useState(null);
   const [teamCount, setTeamCount] = useState(null);
   const [teams, setTeams] = useState(null);
+  const [leaderboard, setLeaderboard] = useState(null);
   const [message, setMessage] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -57,6 +58,16 @@ export default function AdminPanel({ password, onBack }) {
       setTeamCount(list.length);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to load teams");
+    }
+  }
+
+  async function loadLeaderboard() {
+    setError(null);
+    try {
+      const data = await api.getLeaderboard();
+      setLeaderboard(data.entries);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to load leaderboard");
     }
   }
 
@@ -113,7 +124,6 @@ export default function AdminPanel({ password, onBack }) {
       try {
         await api.endTournament(password);
       } catch (err) {
-        // 400 = tournament already FINISHED . fine, proceed to start-tournament anyway.
         if (!(err instanceof ApiError && err.status === 400)) {
           throw err;
         }
@@ -124,6 +134,8 @@ export default function AdminPanel({ password, onBack }) {
 
       await pollStatus();
       await refreshTeamCount();
+      setLeaderboard(null);
+      setTeams(null);
 
       setMessage(
         `Reset complete. New tournament ${newTournament?.id ?? ""} is ${newTournament?.status?.toUpperCase() ?? "WAITING"}.`
@@ -137,7 +149,7 @@ export default function AdminPanel({ password, onBack }) {
 
   return (
     <div className="min-h-screen flex items-center justify-center px-6 py-10" style={{ background: C.bg }}>
-      <div className="w-full max-w-md">
+      <div className="w-full max-w-2xl">
         <ScreenTitle eyebrow="Arena Control" title="Admin Panel" />
         <Panel glow={C.arc} className="flex flex-col gap-4">
           <div className="flex items-center justify-center gap-2">
@@ -204,6 +216,60 @@ export default function AdminPanel({ password, onBack }) {
             <p className="text-xs text-center" style={{ color: C.textFaint }}>
               Ends the current tournament and starts a fresh WAITING one. Verify the team count above reads 0 before opening registration.
             </p>
+          </div>
+
+          <div className="mt-2 pt-4 border-t border-white/10 flex flex-col gap-3">
+            <div className="flex items-center justify-center gap-2">
+              <ListOrdered size={14} style={{ color: C.gold }} />
+              <span className="text-xs uppercase tracking-widest" style={{ color: C.textFaint }}>
+                Leaderboard
+              </span>
+            </div>
+
+            <GlowButton variant="gold" onClick={loadLeaderboard}>
+              Load Leaderboard
+            </GlowButton>
+
+            {leaderboard && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm border-collapse">
+                  <thead>
+                    <tr style={{ color: C.textFaint }}>
+                      <th className="text-left py-1 pr-2 font-normal">#</th>
+                      <th className="text-left py-1 pr-2 font-normal">Team</th>
+                      <th className="text-left py-1 pr-2 font-normal">Promptmon</th>
+                      <th className="text-right py-1 pr-2 font-normal">Creativity</th>
+                      <th className="text-right py-1 pr-2 font-normal">R2</th>
+                      <th className="text-right py-1 pr-2 font-normal">R3</th>
+                      <th className="text-right py-1 pr-2 font-normal">Boss</th>
+                      <th className="text-right py-1 font-normal">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {leaderboard.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="py-3 text-center" style={{ color: C.textMuted }}>
+                          No entries yet.
+                        </td>
+                      </tr>
+                    ) : (
+                      leaderboard.map((e, i) => (
+                        <tr key={e.session_id} className="border-t border-white/5">
+                          <td className="py-1.5 pr-2" style={{ color: i === 0 ? C.gold : C.textMuted }}>{i + 1}</td>
+                          <td className="py-1.5 pr-2" style={{ color: C.textPrimary }}>{e.team_name}</td>
+                          <td className="py-1.5 pr-2" style={{ color: C.textMuted }}>{e.promptmon_name}</td>
+                          <td className="py-1.5 pr-2 text-right" style={{ color: C.textMuted }}>{e.creativity_score}</td>
+                          <td className="py-1.5 pr-2 text-right" style={{ color: C.textMuted }}>{e.round2_score}</td>
+                          <td className="py-1.5 pr-2 text-right" style={{ color: C.textMuted }}>{e.round3_score}</td>
+                          <td className="py-1.5 pr-2 text-right" style={{ color: C.textMuted }}>{e.boss_score}</td>
+                          <td className="py-1.5 text-right font-bold" style={{ color: C.arc }}>{e.total}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
 
           <GlowButton variant="ghost" onClick={onBack}>Back to Landing</GlowButton>

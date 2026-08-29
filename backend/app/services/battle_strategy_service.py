@@ -1,12 +1,10 @@
 from typing import Optional, Sequence
 
-from google.genai import types
-
 from app.models.conversation import Conversation
 from app.models.promptmon import Promptmon
-from app.services.gemini_client import gemini_retry, get_gemini_client
+from app.services.groq_client import get_groq_client, groq_retry
 
-TEXT_MODEL = "gemini-3.6-flash"
+TEXT_MODEL = "openai/gpt-oss-120b"
 
 SYSTEM_PROMPT = (
     "You are the Battle Narrator for the Promptmon: AI Battle Arena tournament. "
@@ -50,7 +48,7 @@ def _build_context(
     )
 
 
-@gemini_retry
+@groq_retry
 async def generate_turn_response(
     own_promptmon: Promptmon,
     opponent_promptmon: Promptmon,
@@ -59,12 +57,17 @@ async def generate_turn_response(
     history: Sequence[Conversation],
     prompt_text: str,
 ) -> str:
-    client = get_gemini_client()
+    client = get_groq_client()
 
-    response = await client.aio.models.generate_content(
+    response = await client.chat.completions.create(
         model=TEXT_MODEL,
-        contents=_build_context(own_promptmon, opponent_promptmon, scenario, twist, history, prompt_text),
-        config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": _build_context(own_promptmon, opponent_promptmon, scenario, twist, history, prompt_text),
+            },
+        ],
     )
 
-    return response.text
+    return response.choices[0].message.content

@@ -18,7 +18,7 @@ from app.models.tournament import Tournament
 from app.schemas.boss_battle import BossBattlePromptCreate, CurrentBossBattleResponse, FinishBossBattleResponse
 from app.services import ai_boss_battle_service, ai_boss_judge_service, ai_boss_service
 
-MAX_TURNS = 1
+MAX_TURNS = 3
 
 
 async def _get_promptmon(db: AsyncSession, session_id: uuid.UUID) -> Promptmon:

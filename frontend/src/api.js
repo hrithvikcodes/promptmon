@@ -38,6 +38,9 @@ export const api = {
   registerSession: (teamName) =>
     request("/sessions", { method: "POST", body: { team_name: teamName } }),
 
+  getMyPromptmon: (sessionId) =>
+    request("/promptmons/me", { headers: sessionHeaders(sessionId) }),
+
   createPromptmon: (sessionId, promptmon) =>
     request("/promptmons", {
       method: "POST",
