@@ -1,76 +1,95 @@
-import { useCallback, useState } from "react";
-import { Loader2 } from "lucide-react";
-import { api, ApiError, isTournamentFinished } from "./api.js";
-import { usePolling } from "./usePolling.js";
-import { C } from "./theme.js";
-import { Panel, ScreenTitle } from "./ui.jsx";
+// ============================================================
+// FILE: src/App.jsx
+// Root component — routes between pages via local state
+// Flat structure: all files live directly in src/
+// ============================================================
+import React, { useState, useMemo } from "react";
+import { C, FONT_IMPORT } from "./theme";
+import { ArenaBackdrop } from "./components";
 
-export default function PostRoundWait({
-  sessionId,
-  lastMatchId,
-  waitingForBoss,
-  onNextMatch,
-  onResolveFinished,
-  onBossReady,
-  onTournamentEnded,
-}) {
-  const [note, setNote] = useState(
-    waitingForBoss
-      ? "You're a finalist! Waiting for the admin to start the final battle..."
-      : "Waiting for the next round to begin..."
-  );
+import LandingPage from "./LandingPage";
+import AdminLoginPage from "./AdminLoginPage";
+import UserRegisterPage from "./UserRegisterPage";
+import CreatePromptmonPage from "./CreatePromptmonPage";
+import LoadingPage from "./LoadingPage";
+import WaitingLobbyPage from "./WaitingLobbyPage";
+import AdminDashboardPage from "./AdminDashboardPage";
 
-  const poll = useCallback(async () => {
-    if (waitingForBoss) {
-      try {
-        await api.getCurrentBossBattle(sessionId);
-        onBossReady();
-      } catch (err) {
-        if (isTournamentFinished(err)) {
-          onTournamentEnded?.();
-          return;
-        }
-        if (!(err instanceof ApiError && err.status === 404)) {
-          setNote("Trouble reaching the server — retrying...");
-        }
-      }
-      return;
+export default function App() {
+  const [view, setView] = useState("landing");
+  const [teamName, setTeamName] = useState("");
+  const [promptmon, setPromptmon] = useState(null);
+
+  const go = (v) => {
+    window.scrollTo({ top: 0, behavior: "instant" });
+    setView(v);
+  };
+
+  const page = useMemo(() => {
+    switch (view) {
+      case "landing":
+        return <LandingPage go={go} />;
+      case "adminLogin":
+        return <AdminLoginPage go={go} />;
+      case "userRegister":
+        return <UserRegisterPage go={go} teamName={teamName} setTeamName={setTeamName} />;
+      case "createPromptmon":
+        return <CreatePromptmonPage go={go} teamName={teamName} setPromptmon={setPromptmon} />;
+      case "loading":
+        return <LoadingPage go={go} />;
+      case "waitingLobby":
+        return <WaitingLobbyPage go={go} teamName={teamName} promptmon={promptmon} />;
+      case "adminDashboard":
+        return <AdminDashboardPage go={go} />;
+      default:
+        return <LandingPage go={go} />;
     }
-
-    try {
-      const match = await api.getCurrentMatch(sessionId);
-
-      if (match.status === "finished") {
-        // Resolve and show the result regardless of whether this is the same
-        // match_id we already knew about — an unseen finished match must
-        // never be treated as "nothing changed."
-        await onResolveFinished(sessionId, match);
-        return;
-      }
-
-      if (match.match_id === lastMatchId) return; // still the same in-progress match, nothing new
-
-      onNextMatch(match);
-    } catch (err) {
-      if (isTournamentFinished(err)) {
-        onTournamentEnded?.();
-        return;
-      }
-      /* no match yet, keep waiting */
-    }
-  }, [sessionId, lastMatchId, waitingForBoss, onNextMatch, onResolveFinished, onBossReady, onTournamentEnded]);
-
-  usePolling(poll, 6000);
+  }, [view, teamName, promptmon]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-6" style={{ background: C.bg }}>
-      <div className="w-full max-w-sm text-center">
-        <ScreenTitle eyebrow="Standby" title="Between Rounds" />
-        <Panel glow={C.gold} className="flex flex-col items-center gap-3">
-          <Loader2 size={24} className="animate-spin" style={{ color: C.gold }} />
-          <p style={{ color: C.textMuted }}>{note}</p>
-        </Panel>
-      </div>
+    <div style={{ fontFamily: "Inter, sans-serif" }}>
+      <style>{`
+        ${FONT_IMPORT}
+        * { box-sizing: border-box; }
+        body { margin: 0; }
+        input[type="range"] {
+          -webkit-appearance: none;
+          height: 4px;
+          border-radius: 999px;
+          background: ${C.bgInput};
+        }
+        input[type="range"]::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          width: 16px;
+          height: 16px;
+          border-radius: 50%;
+          background: ${C.arc};
+          cursor: pointer;
+          border: 2px solid ${C.bgDeep};
+        }
+        input[type="range"]::-moz-range-thumb {
+          width: 16px;
+          height: 16px;
+          border-radius: 50%;
+          background: ${C.arc};
+          cursor: pointer;
+          border: 2px solid ${C.bgDeep};
+        }
+        ::selection { background: ${C.ember}55; }
+        input:focus, select:focus, textarea:focus {
+          box-shadow: 0 0 0 2px ${C.arc}66;
+          border-color: ${C.arc};
+        }
+        * {
+          scrollbar-width: none;
+          -ms-overflow-style: none;
+        }
+        *::-webkit-scrollbar {
+          display: none;
+        }
+      `}</style>
+      <ArenaBackdrop />
+      {page}
     </div>
   );
 }
