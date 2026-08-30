@@ -68,10 +68,6 @@ export default function App() {
     go("results");
   }
 
-  // Given a match already known to be status "finished" but whose result the
-  // frontend hasn't shown yet, fetch the score payload and route accordingly.
-  // Safe to call even if this exact match was already finished server-side —
-  // finish is idempotent and just returns the same scores again.
   async function resolveFinishedMatch(sessionId, match) {
     const finishResult = await api.finishBattle(sessionId, match.match_id);
     const won = finishResult.winner_session_id === sessionId;
@@ -128,12 +124,9 @@ export default function App() {
           if (cancelled) return;
 
           if (match.status === "finished") {
-            // Don't just park on a "waiting" screen — resolve it and show
-            // the actual result, in case the live poll never got the chance to.
             try {
               await resolveFinishedMatch(stored.id, match);
-            } catch (finishErr) {
-              // Fallback: still land somewhere sane rather than crash.
+            } catch {
               if (!cancelled) {
                 setLastMatchId(match.match_id);
                 go("waitingNext");
@@ -190,6 +183,10 @@ export default function App() {
     localStorage.setItem(SESSION_KEY, JSON.stringify(newSession));
     setSession(newSession);
     go("promptmon");
+  }
+
+  if (resuming) {
+    return <ResumingScreen />;
   }
 
   switch (stage) {
