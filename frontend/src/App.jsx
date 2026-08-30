@@ -1,95 +1,267 @@
-// ============================================================
-// FILE: src/App.jsx
-// Root component — routes between pages via local state
-// Flat structure: all files live directly in src/
-// ============================================================
-import React, { useState, useMemo } from "react";
-import { C, FONT_IMPORT } from "./theme";
-import { ArenaBackdrop } from "./components";
+import { useEffect, useState } from "react";
+import { Loader2 } from "lucide-react";
+import { api, ApiError } from "./api.js";
+import { C } from "./theme.js";
+import LandingPage from "./LandingPage.jsx";
+import AdminLogin from "./AdminLogin.jsx";
+import AdminPanel from "./AdminPanel.jsx";
+import UserRegister from "./UserRegister.jsx";
+import PromptmonForm from "./PromptmonForm.jsx";
+import WaitingRoom from "./WaitingRoom.jsx";
+import PostRoundWait from "./PostRoundWait.jsx";
+import BattleView from "./BattleView.jsx";
+import BossBattleView from "./BossBattleView.jsx";
+import ByeScreen from "./ByeScreen.jsx";
+import EliminatedScreen from "./EliminatedScreen.jsx";
+import TournamentEndedScreen from "./TournamentEndedScreen.jsx";
+import ResultsView from "./ResultsView.jsx";
+import LeaderboardView from "./LeaderboardView.jsx";
 
-import LandingPage from "./LandingPage";
-import AdminLoginPage from "./AdminLoginPage";
-import UserRegisterPage from "./UserRegisterPage";
-import CreatePromptmonPage from "./CreatePromptmonPage";
-import LoadingPage from "./LoadingPage";
-import WaitingLobbyPage from "./WaitingLobbyPage";
-import AdminDashboardPage from "./AdminDashboardPage";
+const SESSION_KEY = "session";
 
-export default function App() {
-  const [view, setView] = useState("landing");
-  const [teamName, setTeamName] = useState("");
-  const [promptmon, setPromptmon] = useState(null);
+function loadSession() {
+  const raw = localStorage.getItem(SESSION_KEY);
+  return raw ? JSON.parse(raw) : null;
+}
 
-  const go = (v) => {
-    window.scrollTo({ top: 0, behavior: "instant" });
-    setView(v);
-  };
+function clearStoredSession() {
+  localStorage.removeItem(SESSION_KEY);
+}
 
-  const page = useMemo(() => {
-    switch (view) {
-      case "landing":
-        return <LandingPage go={go} />;
-      case "adminLogin":
-        return <AdminLoginPage go={go} />;
-      case "userRegister":
-        return <UserRegisterPage go={go} teamName={teamName} setTeamName={setTeamName} />;
-      case "createPromptmon":
-        return <CreatePromptmonPage go={go} teamName={teamName} setPromptmon={setPromptmon} />;
-      case "loading":
-        return <LoadingPage go={go} />;
-      case "waitingLobby":
-        return <WaitingLobbyPage go={go} teamName={teamName} promptmon={promptmon} />;
-      case "adminDashboard":
-        return <AdminDashboardPage go={go} />;
-      default:
-        return <LandingPage go={go} />;
-    }
-  }, [view, teamName, promptmon]);
-
+function ResumingScreen() {
   return (
-    <div style={{ fontFamily: "Inter, sans-serif" }}>
-      <style>{`
-        ${FONT_IMPORT}
-        * { box-sizing: border-box; }
-        body { margin: 0; }
-        input[type="range"] {
-          -webkit-appearance: none;
-          height: 4px;
-          border-radius: 999px;
-          background: ${C.bgInput};
-        }
-        input[type="range"]::-webkit-slider-thumb {
-          -webkit-appearance: none;
-          width: 16px;
-          height: 16px;
-          border-radius: 50%;
-          background: ${C.arc};
-          cursor: pointer;
-          border: 2px solid ${C.bgDeep};
-        }
-        input[type="range"]::-moz-range-thumb {
-          width: 16px;
-          height: 16px;
-          border-radius: 50%;
-          background: ${C.arc};
-          cursor: pointer;
-          border: 2px solid ${C.bgDeep};
-        }
-        ::selection { background: ${C.ember}55; }
-        input:focus, select:focus, textarea:focus {
-          box-shadow: 0 0 0 2px ${C.arc}66;
-          border-color: ${C.arc};
-        }
-        * {
-          scrollbar-width: none;
-          -ms-overflow-style: none;
-        }
-        *::-webkit-scrollbar {
-          display: none;
-        }
-      `}</style>
-      <ArenaBackdrop />
-      {page}
+    <div className="min-h-screen flex items-center justify-center" style={{ background: C.bg }}>
+      <Loader2 size={24} className="animate-spin" style={{ color: C.arc }} />
     </div>
   );
+}
+
+export default function App() {
+  const [session, setSession] = useState(loadSession());
+  const [stage, setStage] = useState("landing");
+  const [resuming, setResuming] = useState(!!loadSession());
+  const [adminPassword, setAdminPassword] = useState("");
+  const [result, setResult] = useState(null);
+  const [isBossResult, setIsBossResult] = useState(false);
+  const [lastMatchId, setLastMatchId] = useState(null);
+  const [waitingForBoss, setWaitingForBoss] = useState(false);
+
+  const go = (next) => setStage(next);
+  const onTournamentEnded = () => go("tournamentEnded");
+
+  function handleBattleFinished(finishResult, matchId, round, won) {
+    setResult(finishResult);
+    setIsBossResult(false);
+    setLastMatchId(matchId);
+
+    if (!won) {
+      go("resultsEliminated");
+      return;
+    }
+    setWaitingForBoss(round === "round3");
+    go("results");
+  }
+
+  function handleBossFinished(finishResult) {
+    setResult(finishResult);
+    setIsBossResult(true);
+    go("results");
+  }
+
+  // Given a match already known to be status "finished" but whose result the
+  // frontend hasn't shown yet, fetch the score payload and route accordingly.
+  // Safe to call even if this exact match was already finished server-side —
+  // finish is idempotent and just returns the same scores again.
+  async function resolveFinishedMatch(sessionId, match) {
+    const finishResult = await api.finishBattle(sessionId, match.match_id);
+    const won = finishResult.winner_session_id === sessionId;
+    handleBattleFinished(finishResult, match.match_id, match.round, won);
+  }
+
+  useEffect(() => {
+    const stored = loadSession();
+    if (!stored) {
+      setResuming(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        let waitingStatus = null;
+        try {
+          waitingStatus = await api.getWaitingStatus();
+        } catch {
+          /* non-fatal */
+        }
+
+        if (waitingStatus?.tournament_status === "finished") {
+          if (!cancelled) go("tournamentEnded");
+          return;
+        }
+
+        try {
+          await api.getMyPromptmon(stored.id);
+        } catch (err) {
+          if (cancelled) return;
+          if (err instanceof ApiError && err.status === 401) {
+            clearStoredSession();
+            setSession(null);
+            go("landing");
+            return;
+          }
+          if (err instanceof ApiError && err.status === 403 && err.detail?.code === "TOURNAMENT_FINISHED") {
+            go("tournamentEnded");
+            return;
+          }
+          if (err instanceof ApiError && err.status === 404) {
+            go("promptmon");
+            return;
+          }
+          go("promptmon");
+          return;
+        }
+
+        try {
+          const match = await api.getCurrentMatch(stored.id);
+          if (cancelled) return;
+
+          if (match.status === "finished") {
+            // Don't just park on a "waiting" screen — resolve it and show
+            // the actual result, in case the live poll never got the chance to.
+            try {
+              await resolveFinishedMatch(stored.id, match);
+            } catch (finishErr) {
+              // Fallback: still land somewhere sane rather than crash.
+              if (!cancelled) {
+                setLastMatchId(match.match_id);
+                go("waitingNext");
+              }
+            }
+          } else {
+            go("battle");
+          }
+        } catch (err) {
+          if (cancelled) return;
+          if (err instanceof ApiError && err.status === 401) {
+            clearStoredSession();
+            setSession(null);
+            go("landing");
+            return;
+          }
+          if (err instanceof ApiError && err.status === 403 && err.detail?.code === "TOURNAMENT_FINISHED") {
+            go("tournamentEnded");
+            return;
+          }
+
+          try {
+            await api.getCurrentBossBattle(stored.id);
+            if (!cancelled) go("bossBattle");
+            return;
+          } catch (bossErr) {
+            if (cancelled) return;
+            if (bossErr instanceof ApiError && bossErr.status === 401) {
+              clearStoredSession();
+              setSession(null);
+              go("landing");
+              return;
+            }
+          }
+
+          if (waitingStatus?.tournament_status === "waiting") {
+            go("waitingStart");
+          } else {
+            setLastMatchId(null);
+            go("waitingNext");
+          }
+        }
+      } finally {
+        if (!cancelled) setResuming(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function handleRegistered(newSession) {
+    clearStoredSession();
+    localStorage.setItem(SESSION_KEY, JSON.stringify(newSession));
+    setSession(newSession);
+    go("promptmon");
+  }
+
+  switch (stage) {
+    case "landing":
+      return <LandingPage go={go} />;
+    case "adminLogin":
+      return <AdminLogin onSuccess={(pw) => { setAdminPassword(pw); go("adminPanel"); }} onBack={() => go("landing")} />;
+    case "adminPanel":
+      return <AdminPanel password={adminPassword} onBack={() => go("landing")} />;
+    case "userRegister":
+      return <UserRegister onRegistered={handleRegistered} onBack={() => go("landing")} />;
+    case "promptmon":
+      return <PromptmonForm sessionId={session.id} onCreated={() => go("waitingStart")} />;
+    case "waitingStart":
+      return <WaitingRoom onStarted={() => go("battle")} />;
+    case "battle":
+      return (
+        <BattleView
+          sessionId={session.id}
+          onFinished={handleBattleFinished}
+          onBye={() => go("bye")}
+          onTournamentEnded={onTournamentEnded}
+        />
+      );
+    case "bye":
+      return <ByeScreen onContinue={() => go("waitingNext")} />;
+    case "bossBattle":
+      return (
+        <BossBattleView
+          sessionId={session.id}
+          onFinished={handleBossFinished}
+          onNotQualified={() => go("leaderboard")}
+          onTournamentEnded={onTournamentEnded}
+        />
+      );
+    case "results":
+      return (
+        <ResultsView
+          sessionId={session.id}
+          result={result}
+          isBoss={isBossResult}
+          onContinue={() => go(isBossResult ? "leaderboard" : "waitingNext")}
+        />
+      );
+    case "resultsEliminated":
+      return (
+        <ResultsView
+          sessionId={session.id}
+          result={result}
+          isBoss={false}
+          onContinue={() => go("eliminated")}
+        />
+      );
+    case "eliminated":
+      return <EliminatedScreen onContinue={() => go("leaderboard")} />;
+    case "waitingNext":
+      return (
+        <PostRoundWait
+          sessionId={session.id}
+          lastMatchId={lastMatchId}
+          waitingForBoss={waitingForBoss}
+          onNextMatch={() => go("battle")}
+          onResolveFinished={resolveFinishedMatch}
+          onBossReady={() => go("bossBattle")}
+          onTournamentEnded={onTournamentEnded}
+        />
+      );
+    case "leaderboard":
+      return <LeaderboardView onBack={() => go("landing")} />;
+    case "tournamentEnded":
+      return <TournamentEndedScreen onBack={() => go("landing")} />;
+    default:
+      return <LandingPage go={go} />;
+  }
 }
